@@ -193,10 +193,26 @@ export class ClaudeSandbox {
         console.log(
             chalk.yellow("Keep this terminal open to maintain the session"),
           );
-      }
 
-      // Keep the process running
-      await new Promise(() => {}); // This will keep the process alive
+        // Keep the process running
+        await new Promise(() => {}); // This will keep the process alive
+      } else {
+        // No web UI - stream container logs
+        console.log(chalk.blue("📋 Streaming container logs (Ctrl+C to exit)...\n"));
+
+        const container = this.docker.getContainer(containerId);
+        const logStream = await container.logs({
+          stdout: true,
+          stderr: true,
+          follow: true,
+          timestamps: false
+        });
+
+        container.modem.demuxStream(logStream, process.stdout, process.stderr);
+
+        // Keep the process running
+        await new Promise(() => {}); // This will keep the process alive
+      }
     } catch (error) {
       console.error(chalk.red("Error:"), error);
       throw error;

@@ -214,10 +214,40 @@ program
         console.log(
             chalk.yellow("Keep this terminal open to maintain the session"),
           );
-      }
 
-      // Keep process running
-      await new Promise(() => {});
+        // Keep process running
+        await new Promise(() => {});
+      } else {
+        // No web UI - attach with interactive shell
+        spinner.succeed(chalk.green("Attaching to container..."));
+
+        const { spawn } = require("child_process");
+
+        // Run Claude Code, then drop to bash when Claude exits
+        const dockerExec = spawn("docker", [
+          "exec",
+          "-it",
+          targetContainerId,
+          "bash",
+          "-c",
+          "claude --dangerously-skip-permissions; exec bash"
+        ], {
+          stdio: "inherit"
+        });
+
+        // Wait for the process to close
+        await new Promise<void>((resolve) => {
+          dockerExec.on("close", () => {
+            resolve();
+          });
+          dockerExec.on("error", (error: any) => {
+            spinner.fail(chalk.red(`Error: ${error.message}`));
+            resolve();
+          });
+        });
+
+        process.exit(0);
+      }
     } catch (error: any) {
       spinner.fail(chalk.red(`Failed: ${error.message}`));
       process.exit(1);
