@@ -138,18 +138,26 @@ program
   .action(async (options) => {
     console.log(chalk.blue("🚀 Starting new Claude Sandbox container..."));
 
+    // Workaround for Commander.js v12: boolean flags without defaults aren't always parsed correctly
+    // Check process.argv as fallback for boolean flags on subcommands
+    const mountFolderFromArgv = process.argv.includes('--mount-folder');
+    const includeUntrackedFromArgv = process.argv.includes('--include-untracked');
+
     const config = await loadConfig(options.config);
     config.containerPrefix = options.name || config.containerPrefix;
     config.autoPush = options.push !== false;
     config.autoCreatePR = options.createPr !== false;
-    config.includeUntracked = options.includeUntracked || false;
+    config.includeUntracked = options.includeUntracked === true || includeUntrackedFromArgv || false;
     config.targetBranch = options.branch;
     config.remoteBranch = options.remoteBranch;
     config.prNumber = options.pr;
     if (options.shell) {
       config.defaultShell = options.shell.toLowerCase();
     }
-    if (options.mountFolder || options.mountPath) {
+    
+    // Enable mounted folder mode if flag is present or mount-path is provided
+    const mountFolderEnabled = options.mountFolder === true || mountFolderFromArgv || options.mountPath;
+    if (mountFolderEnabled) {
       config.useMountedFolder = true;
     }
     if (options.mountPath) {
