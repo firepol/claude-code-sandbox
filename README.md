@@ -88,6 +88,8 @@ Options:
   --no-web               Disable web UI (use terminal attach)
   --no-push              Disable automatic branch pushing
   --no-pr                Disable automatic PR creation
+  --mount-folder         Enable mounted folder mode
+  --mount-path <path>    Specify custom mount path
 ```
 
 #### `claude-sandbox attach [container-id]`
@@ -219,6 +221,8 @@ Create a `claude-sandbox.config.json` file (see `claude-sandbox.config.example.j
 - `containerPrefix`: Custom prefix for container names
 - `claudeConfigPath`: Path to Claude configuration file
 - `dockerSocketPath`: Custom Docker/Podman socket path (auto-detected by default)
+- `useMountedFolder`: Enable mounted folder mode (default: false)
+- `mountedFolderPath`: Path to mount into the container (default: current working directory)
 
 #### Mount Configuration
 
@@ -236,6 +240,38 @@ Example use cases:
 - Access host system resources (use with caution)
 
 ## Features
+
+### Mounted Folder Mode
+
+Claude Code Sandbox supports mounting directories directly into containers instead of copying files. This is useful for:
+
+- **Large datasets**: Avoid copying overhead for large files
+- **Non-git directories**: Work with folders that aren't part of a git repository
+- **Real-time changes**: File changes sync instantly without copying delays
+- **Performance**: Direct filesystem access is faster than copying
+
+#### Using Mounted Folder Mode
+
+Via CLI:
+
+```bash
+# Mount current directory
+claude-sandbox start --mount-folder
+
+# Mount a specific directory
+claude-sandbox start --mount-folder --mount-path /path/to/directory
+```
+
+Via configuration file:
+
+```json
+{
+  "useMountedFolder": true,
+  "mountedFolderPath": "/path/to/directory"
+}
+```
+
+**Note**: In mounted folder mode, if the directory isn't a git repository, git operations will be skipped and git monitoring will be disabled. This allows Claude Code to work with any directory, not just git repositories.
 
 ### Podman Support
 

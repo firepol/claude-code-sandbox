@@ -39,12 +39,28 @@ export class ClaudeSandbox {
 
   async run(): Promise<void> {
     try {
-      // Verify we're in a git repository
-      await this.verifyGitRepo();
+      // Verify we're in a git repository (unless using mounted folder mode)
+      let isGitRepo = true;
+      if (!this.config.useMountedFolder) {
+        await this.verifyGitRepo();
+      } else {
+        // Check if it's a git repo, but don't fail if it's not
+        isGitRepo = await this.git.checkIsRepo();
+        if (!isGitRepo) {
+          console.log(
+            chalk.yellow(
+              "⚠ Not a git repository (OK for mounted folder mode)",
+            ),
+          );
+        }
+      }
 
-      // Check current branch
-      const currentBranch = await this.git.branchLocal();
-      console.log(chalk.blue(`Current branch: ${currentBranch.current}`));
+      // Check current branch (only if it's a git repo)
+      let currentBranch = null;
+      if (isGitRepo) {
+        currentBranch = await this.git.branchLocal();
+        console.log(chalk.blue(`Current branch: ${currentBranch.current}`));
+      }
 
       // Determine target branch based on config options (but don't checkout in host repo)
       let branchName = "";
@@ -148,13 +164,17 @@ export class ClaudeSandbox {
         chalk.green(`✓ Started container: ${containerId.substring(0, 12)}`),
       );
 
-      // Start monitoring for commits
-      this.gitMonitor.on("commit", async (commit) => {
-        await this.handleCommit(commit);
-      });
+      // Start monitoring for commits (only if it's a git repo)
+      if (isGitRepo) {
+        this.gitMonitor.on("commit", async (commit) => {
+          await this.handleCommit(commit);
+        });
 
-      await this.gitMonitor.start(branchName);
-      console.log(chalk.blue("✓ Git monitoring started"));
+        await this.gitMonitor.start(branchName);
+        console.log(chalk.blue("✓ Git monitoring started"));
+      } else {
+        console.log(chalk.yellow("⚠ Skipping git monitoring (not a git repo)"));
+      }
 
       // Always launch web UI
       this.webServer = new WebUIServer(this.docker);

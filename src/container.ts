@@ -25,19 +25,32 @@ export class ContainerManager {
     await container.start();
     console.log(chalk.green("✓ Container started"));
 
-    // Copy working directory into container
-    console.log(chalk.blue("• Copying files into container..."));
-    try {
-      await this._copyWorkingDirectory(container, containerConfig.workDir);
-      console.log(chalk.green("✓ Files copied"));
+    // Copy working directory into container (unless using mounted folder mode)
+    if (!this.config.useMountedFolder) {
+      console.log(chalk.blue("• Copying files into container..."));
+      try {
+        await this._copyWorkingDirectory(container, containerConfig.workDir);
+        console.log(chalk.green("✓ Files copied"));
+      } catch (error) {
+        console.error(chalk.red("✗ File copy failed:"), error);
+        // Clean up container on failure
+        await container.stop().catch(() => {});
+        await container.remove().catch(() => {});
+        this.containers.delete(container.id);
+        throw error;
+      }
+    } else {
+      console.log(chalk.blue("• Using mounted folder mode (skipping file copy)"));
+    }
 
-      // Copy Claude configuration if it exists
+    // Copy Claude configuration if it exists
+    try {
       await this._copyClaudeConfig(container);
 
       // Copy git configuration if it exists
       await this._copyGitConfig(container);
     } catch (error) {
-      console.error(chalk.red("✗ File copy failed:"), error);
+      console.error(chalk.red("✗ Configuration copy failed:"), error);
       // Clean up container on failure
       await container.stop().catch(() => {});
       await container.remove().catch(() => {});
@@ -414,8 +427,16 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
     _workDir: string,
     _credentials: Credentials,
   ): string[] {
-    // NO MOUNTING workspace - we'll copy files instead
     const volumes: string[] = [];
+
+    // Mount workspace directly if in mounted folder mode
+    if (this.config.useMountedFolder) {
+      const mountPath = this.config.mountedFolderPath || process.cwd();
+      console.log(
+        chalk.blue(`✓ Mounting folder: ${mountPath} → /workspace`),
+      );
+      volumes.push(`${mountPath}:/workspace`);
+    }
 
     // NO SSH mounting - we'll use GitHub tokens instead
 
