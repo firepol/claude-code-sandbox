@@ -1,5 +1,6 @@
 import Docker from "dockerode";
 import path from "path";
+import fs from "fs";
 import { SandboxConfig, Credentials } from "./types";
 import chalk from "chalk";
 
@@ -431,7 +432,21 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
 
     // Mount workspace directly if in mounted folder mode
     if (this.config.useMountedFolder) {
-      const mountPath = this.config.mountedFolderPath || process.cwd();
+      let mountPath = this.config.mountedFolderPath || process.cwd();
+
+      // Validate and resolve the mount path
+      if (!path.isAbsolute(mountPath)) {
+        // Convert relative path to absolute
+        mountPath = path.resolve(mountPath);
+      }
+
+      // Check if the path exists
+      if (!fs.existsSync(mountPath)) {
+        const errorMsg = `Mounted folder path does not exist: ${mountPath}`;
+        console.error(chalk.red(`✗ Error: ${errorMsg}`));
+        process.exit(1);
+      }
+
       console.log(
         chalk.blue(`✓ Mounting folder: ${mountPath} → /workspace`),
       );

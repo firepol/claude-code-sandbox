@@ -92,7 +92,7 @@ program
     if (options.shell) {
       config.defaultShell = options.shell.toLowerCase();
     }
-    if (options.mountFolder) {
+    if (options.mountFolder || options.mountPath) {
       config.useMountedFolder = true;
     }
     if (options.mountPath) {
@@ -149,7 +149,7 @@ program
     if (options.shell) {
       config.defaultShell = options.shell.toLowerCase();
     }
-    if (options.mountFolder) {
+    if (options.mountFolder || options.mountPath) {
       config.useMountedFolder = true;
     }
     if (options.mountPath) {
