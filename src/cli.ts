@@ -135,6 +135,10 @@ program
   )
   .option("--mount-folder", "Enable mounted folder mode")
   .option("--mount-path <path>", "Specify custom mount path")
+  .option(
+    "--no-web",
+    "Disable web UI",
+  )
   .action(async (options) => {
     console.log(chalk.blue("🚀 Starting new Claude Sandbox container..."));
 
@@ -163,6 +167,7 @@ program
     if (options.mountPath) {
       config.mountedFolderPath = options.mountPath;
     }
+    config.useWebUI = options.web !== false;
 
     const sandbox = new ClaudeSandbox(config);
     await sandbox.run();
@@ -171,8 +176,12 @@ program
 // Attach command - attach to existing container
 program
   .command("attach [container-id]")
+  .option(
+    "--no-web",
+    "Disable web UI",
+  )
   .description("Attach to an existing Claude Sandbox container")
-  .action(async (containerId) => {
+  .action(async (containerId, options) => {
     await ensureDockerConfig();
     const spinner = ora("Looking for containers...").start();
 
@@ -191,22 +200,54 @@ program
         }
       }
 
-      spinner.text = "Launching web UI...";
+      if (options.web !== false) {
+        spinner.text = "Launching web UI...";
 
-      // Always launch web UI
-      const webServer = new WebUIServer(docker);
-      const url = await webServer.start();
-      const fullUrl = `${url}?container=${targetContainerId}`;
+        // Always launch web UI
+        const webServer = new WebUIServer(docker);
+        const url = await webServer.start();
+        const fullUrl = `${url}?container=${targetContainerId}`;
 
-      spinner.succeed(chalk.green(`Web UI available at: ${fullUrl}`));
-      await webServer.openInBrowser(fullUrl);
+        spinner.succeed(chalk.green(`Web UI available at: ${fullUrl}`));
+        await webServer.openInBrowser(fullUrl);
 
-      console.log(
-        chalk.yellow("Keep this terminal open to maintain the session"),
-      );
+        console.log(
+            chalk.yellow("Keep this terminal open to maintain the session"),
+          );
 
-      // Keep process running
-      await new Promise(() => {});
+        // Keep process running
+        await new Promise(() => {});
+      } else {
+        // No web UI - attach with interactive shell
+        spinner.succeed(chalk.green("Attaching to container..."));
+
+        const { spawn } = require("child_process");
+
+        // Run Claude Code, then drop to bash when Claude exits
+        const dockerExec = spawn("docker", [
+          "exec",
+          "-it",
+          targetContainerId,
+          "bash",
+          "-c",
+          "claude --dangerously-skip-permissions; exec bash"
+        ], {
+          stdio: "inherit"
+        });
+
+        // Wait for the process to close
+        await new Promise<void>((resolve) => {
+          dockerExec.on("close", () => {
+            resolve();
+          });
+          dockerExec.on("error", (error: any) => {
+            spinner.fail(chalk.red(`Error: ${error.message}`));
+            resolve();
+          });
+        });
+
+        process.exit(0);
+      }
     } catch (error: any) {
       spinner.fail(chalk.red(`Failed: ${error.message}`));
       process.exit(1);

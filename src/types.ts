@@ -28,6 +28,7 @@ export interface SandboxConfig {
   dockerSocketPath?: string;
   useMountedFolder?: boolean;
   mountedFolderPath?: string;
+  useWebUI?: boolean;
 }
 
 export interface Credentials {

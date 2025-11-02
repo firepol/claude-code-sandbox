@@ -176,25 +176,43 @@ export class ClaudeSandbox {
         console.log(chalk.yellow("⚠ Skipping git monitoring (not a git repo)"));
       }
 
-      // Always launch web UI
-      this.webServer = new WebUIServer(this.docker);
+      if (this.config.useWebUI) { // Start web UI
+        // Always launch web UI
+        this.webServer = new WebUIServer(this.docker);
 
-      // Pass repo info to web server
-      this.webServer.setRepoInfo(process.cwd(), branchName);
+        // Pass repo info to web server
+        this.webServer.setRepoInfo(process.cwd(), branchName);
 
-      const webUrl = await this.webServer.start();
+        const webUrl = await this.webServer.start();
 
-      // Open browser to the web UI with container ID
-      const fullUrl = `${webUrl}?container=${containerId}`;
-      await this.webServer.openInBrowser(fullUrl);
+        // Open browser to the web UI with container ID
+        const fullUrl = `${webUrl}?container=${containerId}`;
+        await this.webServer.openInBrowser(fullUrl);
 
-      console.log(chalk.green(`\n✓ Web UI available at: ${fullUrl}`));
-      console.log(
-        chalk.yellow("Keep this terminal open to maintain the session"),
-      );
+        console.log(chalk.green(`\n✓ Web UI available at: ${fullUrl}`));
+        console.log(
+            chalk.yellow("Keep this terminal open to maintain the session"),
+          );
 
-      // Keep the process running
-      await new Promise(() => {}); // This will keep the process alive
+        // Keep the process running
+        await new Promise(() => {}); // This will keep the process alive
+      } else {
+        // No web UI - stream container logs
+        console.log(chalk.blue("📋 Streaming container logs (Ctrl+C to exit)...\n"));
+
+        const container = this.docker.getContainer(containerId);
+        const logStream = await container.logs({
+          stdout: true,
+          stderr: true,
+          follow: true,
+          timestamps: false
+        });
+
+        container.modem.demuxStream(logStream, process.stdout, process.stderr);
+
+        // Keep the process running
+        await new Promise(() => {}); // This will keep the process alive
+      }
     } catch (error) {
       console.error(chalk.red("Error:"), error);
       throw error;
