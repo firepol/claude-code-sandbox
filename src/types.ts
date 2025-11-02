@@ -26,6 +26,8 @@ export interface SandboxConfig {
   remoteBranch?: string;
   prNumber?: string;
   dockerSocketPath?: string;
+  useMountedFolder?: boolean;
+  mountedFolderPath?: string;
 }
 
 export interface Credentials {
