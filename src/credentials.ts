@@ -24,6 +24,13 @@ export class CredentialManager {
     // Discover GitHub credentials
     credentials.github = await this.discoverGitHubCredentials();
 
+    // Discover ccstatusline settings
+    try {
+      credentials.ccstatusline = await this.discoverCCStatuslineSettings();
+    } catch {
+      // ccstatusline is optional
+    }
+
     return credentials;
   }
 
@@ -160,5 +167,28 @@ export class CredentialManager {
     }
 
     return github;
+  }
+
+  private async discoverCCStatuslineSettings(): Promise<Credentials["ccstatusline"]> {
+    // Check if ~/.config/ccstatusline/settings.json exists
+    const ccstatuslineSettingsPath = path.join(
+      os.homedir(),
+      ".config",
+      "ccstatusline",
+      "settings.json",
+    );
+
+    try {
+      const stat = await fs.stat(ccstatuslineSettingsPath);
+      if (stat.isFile()) {
+        return {
+          settingsPath: ccstatuslineSettingsPath,
+        };
+      }
+    } catch {
+      // File doesn't exist or can't be accessed
+    }
+
+    throw new Error("ccstatusline settings not found");
   }
 }

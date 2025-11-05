@@ -42,6 +42,9 @@ export interface Credentials {
     token?: string;
     gitConfig?: string;
   };
+  ccstatusline?: {
+    settingsPath: string;
+  };
 }
 
 export interface CommitInfo {

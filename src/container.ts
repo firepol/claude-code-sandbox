@@ -50,6 +50,9 @@ export class ContainerManager {
 
       // Copy git configuration if it exists
       await this._copyGitConfig(container);
+
+      // Copy ccstatusline settings if it exists
+      await this._copyCCStatuslineSettings(container, containerConfig.credentials);
     } catch (error) {
       console.error(chalk.red("✗ Configuration copy failed:"), error);
       // Clean up container on failure
@@ -839,6 +842,93 @@ export class ContainerManager {
     } catch (error) {
       console.error(
         chalk.yellow("⚠ Failed to copy git configuration:"),
+        error,
+      );
+      // Don't throw - this is not critical for container operation
+    }
+  }
+
+  private async _copyCCStatuslineSettings(
+    container: Docker.Container,
+    credentials: Credentials,
+  ): Promise<void> {
+    const fsModule = require("fs");
+    const fsSync = fsModule;
+
+    // Check if credentials contain ccstatusline settings
+    if (!credentials.ccstatusline?.settingsPath) {
+      return; // No ccstatusline settings to copy
+    }
+
+    const ccstatuslineSettingsPath = credentials.ccstatusline.settingsPath;
+
+    try {
+      // Check if the settings file exists
+      if (!fsSync.existsSync(ccstatuslineSettingsPath)) {
+        return; // Settings file doesn't exist
+      }
+
+      console.log(chalk.blue("• Copying ccstatusline settings..."));
+
+      // Read the settings file
+      const settingsContent = fsSync.readFileSync(
+        ccstatuslineSettingsPath,
+        "utf-8",
+      );
+
+      // Create a temporary tar file with the settings
+      const tarFile = `/tmp/ccstatusline-settings-${Date.now()}.tar`;
+      const tarStream = require("tar-stream");
+      const pack = tarStream.pack();
+
+      // Add the settings.json file to the tar, creating the directory structure
+      pack.entry(
+        { name: ".config/ccstatusline/settings.json", mode: 0o644 },
+        settingsContent,
+        (err: any) => {
+          if (err) throw err;
+          pack.finalize();
+        },
+      );
+
+      // Write the tar to a file
+      const chunks: Buffer[] = [];
+      pack.on("data", (chunk: any) => chunks.push(chunk));
+
+      await new Promise<void>((resolve, reject) => {
+        pack.on("end", () => {
+          fsSync.writeFileSync(tarFile, Buffer.concat(chunks));
+          resolve();
+        });
+        pack.on("error", reject);
+      });
+
+      // Copy the tar file to the container's ubuntu user home directory
+      const stream = fsSync.createReadStream(tarFile);
+      await container.putArchive(stream, {
+        path: "/home/ubuntu",
+      });
+
+      // Clean up
+      fsSync.unlinkSync(tarFile);
+
+      // Fix permissions on the copied files
+      const fixPermsExec = await container.exec({
+        Cmd: [
+          "/bin/bash",
+          "-c",
+          "sudo chown -R ubuntu:ubuntu /home/ubuntu/.config && sudo chmod -R 755 /home/ubuntu/.config",
+        ],
+        AttachStdout: false,
+        AttachStderr: false,
+      });
+
+      await fixPermsExec.start({});
+
+      console.log(chalk.green("✓ ccstatusline settings copied successfully"));
+    } catch (error) {
+      console.error(
+        chalk.yellow("⚠ Failed to copy ccstatusline settings:"),
         error,
       );
       // Don't throw - this is not critical for container operation
