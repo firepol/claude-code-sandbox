@@ -99,120 +99,16 @@ export class ContainerManager {
   }
 
   private async buildDefaultImage(imageName: string): Promise<void> {
-    const dockerfile = `
-FROM ubuntu:22.04
+    // Use the actual docker/Dockerfile instead of maintaining a duplicate
+    const dockerfilePath = path.join(__dirname, '../docker/Dockerfile');
 
-# Install system dependencies
-RUN apt-get update && apt-get install -y \\
-    curl \\
-    git \\
-    openssh-client \\
-    python3 \\
-    python3-pip \\
-    build-essential \\
-    sudo \\
-    vim \\
-    ca-certificates \\
-    gnupg \\
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js 20.x
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \\
-    && apt-get install -y nodejs
-
-# Install GitHub CLI
-RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | sudo dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg \\
-    && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | sudo tee /etc/apt/sources.list.d/github-cli.list > /dev/null \\
-    && apt-get update \\
-    && apt-get install -y gh
-
-# Install Claude Code
-RUN npm install -g @anthropic-ai/claude-code@latest
-
-# Create a non-root user with sudo privileges
-RUN useradd -m -s /bin/bash claude && \\
-    echo 'claude ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \\
-    usermod -aG sudo claude
-
-# Create workspace directory and set ownership
-RUN mkdir -p /workspace && \\
-    chown -R claude:claude /workspace
-
-# Switch to non-root user
-USER claude
-WORKDIR /workspace
-
-# Set up entrypoint
-ENTRYPOINT ["/bin/bash", "-c"]
-`;
-    /*
-RUN echo '#!/bin/bash\\n\\
-# Allow the initial branch creation\\n\\
-if [ ! -f /tmp/.branch-created ]; then\\n\\
-    /usr/bin/git "$@"\\n\\
-    if [[ "$1" == "checkout" ]] && [[ "$2" == "-b" ]]; then\\n\\
-        touch /tmp/.branch-created\\n\\
-    fi\\n\\
-else\\n\\
-    # After initial branch creation, prevent switching\\n\\
-    if [[ "$1" == "checkout" ]] && [[ "$2" != "-b" ]]; then\\n\\
-        echo "Branch switching is disabled in claude-code-sandbox"\\n\\
-        exit 1\\n\\
-    fi\\n\\
-    if [[ "$1" == "switch" ]]; then\\n\\
-        echo "Branch switching is disabled in claude-code-sandbox"\\n\\
-        exit 1\\n\\
-    fi\\n\\
-    /usr/bin/git "$@"\\n\\
-fi' > /usr/local/bin/git && \\
-    chmod +x /usr/local/bin/git
-# Create startup script
-RUN echo '#!/bin/bash\\n\\
-echo "Waiting for attachment..."\\n\\
-sleep 2\\n\\
-cd /workspace\\n\\
-git checkout -b "$1"\\n\\
-echo "Starting Claude Code on branch $1..."\\n\\
-exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
-    chmod +x /start-claude.sh */
-    // Build image from string
-    const tarStream = require("tar-stream");
-    const pack = tarStream.pack();
-
-    // Add Dockerfile to tar
-    pack.entry({ name: "Dockerfile" }, dockerfile, (err: any) => {
-      if (err) throw err;
-      pack.finalize();
-    });
-
-    // Convert to buffer for docker
-    const chunks: Buffer[] = [];
-    pack.on("data", (chunk: any) => chunks.push(chunk));
-
-    await new Promise((resolve) => {
-      pack.on("end", resolve);
-    });
-
-    const tarBuffer = Buffer.concat(chunks);
-    const buildStream = await this.docker.buildImage(tarBuffer as any, {
-      t: imageName,
-    });
-
-    // Wait for build to complete
-    await new Promise((resolve, reject) => {
-      this.docker.modem.followProgress(
-        buildStream as any,
-        (err: any, res: any) => {
-          if (err) reject(err);
-          else resolve(res);
-        },
-        (event: any) => {
-          if (event.stream) {
-            process.stdout.write(event.stream);
-          }
-        },
-      );
-    });
+    // Check if the Dockerfile exists
+    if (fs.existsSync(dockerfilePath)) {
+      console.log(chalk.blue(`• Using Dockerfile from: ${dockerfilePath}`));
+      await this.buildImage(dockerfilePath, imageName);
+    } else {
+      throw new Error(`Default Dockerfile not found at: ${dockerfilePath}`);
+    }
   }
 
   private async buildImage(
@@ -453,7 +349,14 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
       volumes.push(`${mountPath}:/workspace`);
     }
 
-    // NO SSH mounting - we'll use GitHub tokens instead
+    // Mount SSH directory (read-only) for git operations
+    // The entrypoint script will copy these into the container safely
+    const os = require("os");
+    const sshPath = path.join(os.homedir(), ".ssh");
+    if (fs.existsSync(sshPath)) {
+      volumes.push(`${sshPath}:/tmp/.ssh:ro`);
+      console.log(chalk.blue("✓ Mounting SSH config (read-only)"));
+    }
 
     // Add custom volumes (legacy format)
     if (this.config.volumes) {
@@ -493,12 +396,12 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
           }
 
           // Expand environment variables in target path
-          let expandedTarget = mount.target.replace(/\$HOME/g, "/home/claude");
+          let expandedTarget = mount.target.replace(/\$HOME/g, "/home/ubuntu");
           expandedTarget = expandedTarget.replace(
             /\$(\w+)/g,
             (match, varName) => {
               // For container paths, we need to use container's environment
-              if (varName === "HOME") return "/home/claude";
+              if (varName === "HOME") return "/home/ubuntu";
               return match; // Keep other variables as-is
             },
           );
@@ -732,7 +635,7 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
 
             const stream = fs.createReadStream(claudeDirTar);
             await container.putArchive(stream, {
-              path: "/home/claude",
+              path: "/home/ubuntu",
             });
 
             fs.unlinkSync(claudeDirTar);
@@ -743,7 +646,7 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
                 Cmd: [
                   "/bin/bash",
                   "-c",
-                  "sudo mkdir -p /home/claude/.claude && sudo chown -R claude:claude /home/claude/.claude && sudo chmod 700 /home/claude/.claude && sudo chmod 600 /home/claude/.claude/.credentials.json",
+                  "sudo mkdir -p /home/ubuntu/.claude && sudo chown -R ubuntu:ubuntu /home/ubuntu/.claude && sudo chmod 700 /home/ubuntu/.claude && sudo chmod 600 /home/ubuntu/.claude/.credentials.json",
                 ],
                 AttachStdout: false,
                 AttachStderr: false,
@@ -794,7 +697,7 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
 
         const stream = fs.createReadStream(tarFile);
         await container.putArchive(stream, {
-          path: "/home/claude",
+          path: "/home/ubuntu",
         });
 
         fs.unlinkSync(tarFile);
@@ -805,7 +708,7 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
             Cmd: [
               "/bin/bash",
               "-c",
-              "sudo chown claude:claude /home/claude/.claude.json && chmod 644 /home/claude/.claude.json",
+              "sudo chown ubuntu:ubuntu /home/ubuntu/.claude.json && chmod 644 /home/ubuntu/.claude.json",
             ],
             AttachStdout: false,
             AttachStderr: false,
@@ -836,7 +739,7 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
 
         const stream = fs.createReadStream(tarFile);
         await container.putArchive(stream, {
-          path: "/home/claude",
+          path: "/home/ubuntu",
         });
 
         fs.unlinkSync(tarFile);
@@ -847,7 +750,7 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
             Cmd: [
               "/bin/bash",
               "-c",
-              "sudo chown -R claude:claude /home/claude/.claude && chmod -R 755 /home/claude/.claude",
+              "sudo chown -R ubuntu:ubuntu /home/ubuntu/.claude && chmod -R 755 /home/ubuntu/.claude",
             ],
             AttachStdout: false,
             AttachStderr: false,
@@ -910,10 +813,10 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
         pack.on("error", reject);
       });
 
-      // Copy the tar file to the container's claude user home directory
+      // Copy the tar file to the container's ubuntu user home directory
       const stream = fs.createReadStream(tarFile);
       await container.putArchive(stream, {
-        path: "/home/claude", // Copy to claude user's home directory
+        path: "/home/ubuntu", // Copy to ubuntu user's home directory
       });
 
       // Clean up
@@ -924,7 +827,7 @@ exec claude --dangerously-skip-permissions' > /start-claude.sh && \\
         Cmd: [
           "/bin/bash",
           "-c",
-          "sudo chown claude:claude /home/claude/.gitconfig",
+          "sudo chown ubuntu:ubuntu /home/ubuntu/.gitconfig",
         ],
         AttachStdout: false,
         AttachStderr: false,
@@ -984,7 +887,7 @@ exec /bin/bash`;
         "-c",
         `
         cd /workspace &&
-        sudo chown -R claude:claude /workspace &&
+        sudo chown -R ubuntu:ubuntu /workspace &&
         git config --global --add safe.directory /workspace &&
         # Clean up macOS resource fork files in git pack directory
         find .git/objects/pack -name "._pack-*.idx" -type f -delete 2>/dev/null || true &&
@@ -1026,10 +929,10 @@ exec /bin/bash`;
             echo "✓ Created new branch: ${branchName}"
           fi
         fi &&
-        cat > /home/claude/start-session.sh << 'EOF'
+        cat > /home/ubuntu/start-session.sh << 'EOF'
 ${startupScript}
 EOF
-        chmod +x /home/claude/start-session.sh &&
+        chmod +x /home/ubuntu/start-session.sh &&
         echo "✓ Startup script created"
       `,
       ],
@@ -1091,7 +994,7 @@ EOF
           AttachStdout: true,
           AttachStderr: true,
           WorkingDir: "/workspace",
-          User: "claude",
+          User: "ubuntu",
         });
 
         const cmdStream = await cmdExec.start({});
