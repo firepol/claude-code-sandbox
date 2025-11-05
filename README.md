@@ -377,25 +377,50 @@ claude-sandbox attach
 
 The default Docker image includes:
 
-- Ubuntu 22.04
+- Ubuntu 24.04
 - Git, GitHub CLI
-- Node.js, npm
+- Node.js, npm, yarn, typescript
 - Python 3
 - Claude Code (latest)
 - Build essentials
+- Common dev tools (jq, vim, nano, tmux, screen, rsync)
+- Shell utilities (fd, ripgrep, shellcheck, pv)
+- Network tools (netstat, netcat-openbsd, socat)
+- Databases clients (PostgreSQL, MySQL)
+- Web scraping tools (curl, wget, httrack)
+- Documentation tools (pandoc)
+- Database clients (PostgreSQL, MySQL, SQLite 3)
+- Compression tools (zstd, lz4, xz, brotli, zip, unzip)
 
 ### Custom Dockerfile
 
-Create a custom environment:
+If not used claude-sandbox's default image, you can create a custom Dockerfile:
+
+```bash
+docker build -t claude-code-sandbox:latest -f docker/Dockerfile docker/
+```
+
+Create a custom environment in the `custom-docker/` directory (git-ignored by default):
+
+```bash
+# Create custom-docker directory
+mkdir -p custom-docker
+```
+
+Create `custom-docker/Dockerfile`:
 
 ```dockerfile
 FROM claude-code-sandbox:latest
 
 # Add your tools
-RUN apt-get update && apt-get install -y \
+RUN sudo apt-get update && sudo apt-get install -y \
     rust \
     cargo \
-    postgresql-client
+    postgresql-client \
+    && sudo rm -rf /var/lib/apt/lists/*
+
+# Install Node.js tools
+RUN npm install -g your-package
 
 # Install project dependencies
 COPY package.json /tmp/
@@ -403,14 +428,59 @@ RUN cd /tmp && npm install
 
 # Custom configuration
 ENV CUSTOM_VAR=value
+
+WORKDIR /workspace
 ```
 
-Reference in config:
+Reference in `claude-sandbox.config.json`:
 
 ```json
 {
-  "dockerfile": "./my-custom.Dockerfile"
+  "dockerfile": "./custom-docker/Dockerfile",
+  "dockerImage": "claude-code-sandbox-custom:latest"
 }
+```
+
+The `custom-docker/` directory is git-ignored, allowing you to maintain local customizations without committing them to the repository.
+
+### Docker commands
+
+To run a container and enter its shell using the claude-code-sandbox image, you can use Docker directly:
+
+```bash
+docker run -it --rm claude-code-sandbox:latest bash
+```
+
+This command:
+- -it - Interactive terminal
+- --rm - Removes container when you exit
+- claude-code-sandbox:latest - The image to use
+- bash - Command to run (shell)
+
+If you want to keep the container running (without --rm):
+
+```bash
+docker run -it --name my-sandbox claude-code-sandbox:latest bash
+```
+
+Then later you can attach to it:
+
+```bash
+docker exec -it my-sandbox bash
+```
+
+With workspace mounting:
+
+```bash
+docker run -it --rm -v $(pwd):/workspace -w /workspace claude-code-sandbox:latest bash
+```
+
+This mounts your current directory as /workspace inside the container.
+
+Note: The container runs as the ubuntu user by default (not root), and has passwordless sudo configured. So if you need root access inside:
+
+```bash
+sudo apt-get update
 ```
 
 ## Workflow Example

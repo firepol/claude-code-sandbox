@@ -176,9 +176,9 @@ export class WebUIServer {
               AttachStdout: true,
               AttachStderr: true,
               Tty: true,
-              Cmd: ["/home/claude/start-session.sh"],
+              Cmd: ["/home/ubuntu/start-session.sh"],
               WorkingDir: "/workspace",
-              User: "claude",
+              User: "ubuntu",
               Env: ["TERM=xterm-256color", "COLORTERM=truecolor"],
             });
 

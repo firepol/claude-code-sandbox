@@ -1,4 +1,4 @@
-FROM ubuntu:22.04
+FROM ubuntu:24.04
 
 # Prevent interactive prompts during package installation
 ENV DEBIAN_FRONTEND=noninteractive
@@ -6,6 +6,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     curl \
+    wget \
     git \
     openssh-client \
     python3 \
@@ -13,13 +14,40 @@ RUN apt-get update && apt-get install -y \
     build-essential \
     sudo \
     vim \
+    nano \
     jq \
     ca-certificates \
     gnupg \
+    iproute2 \
+    net-tools \
+    netcat-openbsd \
+    socat \
+    tmux \
+    screen \
+    pv \
+    fd-find \
+    ripgrep \
+    shellcheck \
+    sqlite3 \
+    zstd \
+    lz4 \
+    xz-utils \
+    brotli \
+    zip \
+    unzip \
+    rsync \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js 20.x
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
+# Configure passwordless sudo for ubuntu user
+RUN echo 'ubuntu ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu && \
+    chmod 440 /etc/sudoers.d/ubuntu
+
+# Create workspace directory and set ownership
+RUN mkdir -p /workspace && \
+    chown -R ubuntu:ubuntu /workspace
+
+# Install Node.js 22.x
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
     && apt-get install -y nodejs
 
 # Install GitHub CLI
@@ -27,46 +55,25 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | d
     && chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
     && apt-get update \
-    && apt-get install -y gh
+    && apt-get install -y gh \
+    && rm -rf /var/lib/apt/lists/*
 
 # Install Claude Code
 RUN npm install -g @anthropic-ai/claude-code@latest
 
-# Create workspace directory
-RUN mkdir -p /workspace
-WORKDIR /workspace
+# Add /home/ubuntu/.local/bin to system-wide bash config for all interactive shells
+# This is sourced by /etc/profile for bash shells, so no need to add to /etc/profile separately
+RUN echo '' >> /etc/bash.bashrc && \
+    echo '# Add user local bin to PATH' >> /etc/bash.bashrc && \
+    echo 'export PATH="/home/ubuntu/.local/bin:$PATH"' >> /etc/bash.bashrc
 
-# Create a wrapper script for git that prevents branch switching
-RUN echo '#!/bin/bash\n\
-# Allow the initial branch creation\n\
-if [ ! -f /tmp/.branch-created ]; then\n\
-    /usr/bin/git.real "$@"\n\
-    if [[ "$1" == "checkout" ]] && [[ "$2" == "-b" ]]; then\n\
-        touch /tmp/.branch-created\n\
-    fi\n\
-else\n\
-    # After initial branch creation, prevent switching\n\
-    if [[ "$1" == "checkout" ]] && [[ "$2" != "-b" ]] && [[ "$*" != *"--"* ]]; then\n\
-        echo "Error: Branch switching is disabled in claude-code-sandbox"\n\
-        echo "You can only create new branches with git checkout -b"\n\
-        exit 1\n\
-    fi\n\
-    if [[ "$1" == "switch" ]]; then\n\
-        echo "Error: Branch switching is disabled in claude-code-sandbox"\n\
-        exit 1\n\
-    fi\n\
-    /usr/bin/git.real "$@"\n\
-fi' > /usr/local/bin/git-wrapper && \
-    chmod +x /usr/local/bin/git-wrapper && \
-    mv /usr/bin/git /usr/bin/git.real && \
-    ln -s /usr/local/bin/git-wrapper /usr/bin/git
-
-# Set up SSH config
-RUN mkdir -p /root/.ssh && \
+# Set up SSH config for ubuntu user
+RUN mkdir -p /home/ubuntu/.ssh && \
     echo "Host github.com\n\
     StrictHostKeyChecking no\n\
-    UserKnownHostsFile /dev/null" > /root/.ssh/config && \
-    chmod 600 /root/.ssh/config
+    UserKnownHostsFile /dev/null" > /home/ubuntu/.ssh/config && \
+    chmod 600 /home/ubuntu/.ssh/config && \
+    chown -R ubuntu:ubuntu /home/ubuntu/.ssh
 
 # Set git to use credential helper
 RUN git config --global credential.helper 'cache --timeout=3600'
@@ -77,18 +84,24 @@ set -e\n\
 \n\
 # Copy SSH keys if mounted\n\
 if [ -d "/tmp/.ssh" ]; then\n\
-    cp -r /tmp/.ssh/* /root/.ssh/ 2>/dev/null || true\n\
-    chmod 600 /root/.ssh/* 2>/dev/null || true\n\
+    cp -r /tmp/.ssh/* /home/ubuntu/.ssh/ 2>/dev/null || true\n\
+    chmod 600 /home/ubuntu/.ssh/* 2>/dev/null || true\n\
+    chown -R ubuntu:ubuntu /home/ubuntu/.ssh\n\
 fi\n\
 \n\
 # Copy git config if mounted\n\
 if [ -f "/tmp/.gitconfig" ]; then\n\
-    cp /tmp/.gitconfig /root/.gitconfig\n\
+    cp /tmp/.gitconfig /home/ubuntu/.gitconfig\n\
+    chown ubuntu:ubuntu /home/ubuntu/.gitconfig\n\
 fi\n\
 \n\
 # Execute the command\n\
 exec "$@"' > /entrypoint.sh && \
     chmod +x /entrypoint.sh
+
+# Switch to ubuntu user
+USER ubuntu
+WORKDIR /workspace
 
 ENTRYPOINT ["/entrypoint.sh"]
 CMD ["bash"]

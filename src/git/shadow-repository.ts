@@ -408,7 +408,7 @@ export class ShadowRepository {
     // Prepare rsync rules
     await this.prepareRsyncRules();
 
-    // First, ensure files in container are owned by claude user
+    // First, ensure files in container are owned by ubuntu user
     try {
       console.log(chalk.blue('  Fixing file ownership in container...'));
 
@@ -418,21 +418,21 @@ export class ShadowRepository {
       // Approach 1: Run as root
       try {
         await execAsync(
-          `docker exec --user root ${containerId} chown -R claude:claude ${containerPath}`
+          `docker exec --user root ${containerId} chown -R ubuntu:ubuntu ${containerPath}`
         );
         ownershipFixed = true;
       } catch (rootError) {
         // Approach 2: Try without --user root
         try {
           await execAsync(
-            `docker exec ${containerId} chown -R claude:claude ${containerPath}`
+            `docker exec ${containerId} chown -R ubuntu:ubuntu ${containerPath}`
           );
           ownershipFixed = true;
         } catch (normalError) {
           // Approach 3: Use sudo if available
           try {
             await execAsync(
-              `docker exec ${containerId} sudo chown -R claude:claude ${containerPath}`
+              `docker exec ${containerId} sudo chown -R ubuntu:ubuntu ${containerPath}`
             );
             ownershipFixed = true;
           } catch (sudoError) {
