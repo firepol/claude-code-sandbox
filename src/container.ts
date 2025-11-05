@@ -50,8 +50,10 @@ export class ContainerManager {
         await this._copyClaudeConfig(container);
       } else {
         console.log(
-          chalk.blue("• Skipping Claude config copy (using mounted .claude)"),
+          chalk.blue("• Skipping .claude directory copy (using mount)"),
         );
+        // Still need to copy .claude.json (it's in home directory, not .claude/)
+        await this._copyClaudeJson(container);
       }
 
       // Copy git configuration if it exists
@@ -784,6 +786,73 @@ export class ContainerManager {
     } catch (error) {
       console.error(
         chalk.yellow("⚠ Failed to copy Claude configuration:"),
+        error,
+      );
+      // Don't throw - this is not critical for container operation
+    }
+  }
+
+  private async _copyClaudeJson(container: Docker.Container): Promise<void> {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+
+    try {
+      // Copy .claude.json if it exists
+      const claudeJsonPath = path.join(os.homedir(), '.claude.json');
+      if (fs.existsSync(claudeJsonPath)) {
+        console.log(chalk.blue('• Copying .claude.json...'));
+
+        const configContent = fs.readFileSync(claudeJsonPath, 'utf-8');
+        const tarFile = `/tmp/claude-json-${Date.now()}.tar`;
+        const tarStream = require('tar-stream');
+        const pack = tarStream.pack();
+
+        pack.entry(
+          { name: '.claude.json', mode: 0o644 },
+          configContent,
+          (err: any) => {
+            if (err) throw err;
+            pack.finalize();
+          },
+        );
+
+        const chunks: Buffer[] = [];
+        pack.on('data', (chunk: any) => chunks.push(chunk));
+
+        await new Promise<void>((resolve, reject) => {
+          pack.on('end', () => {
+            fs.writeFileSync(tarFile, Buffer.concat(chunks));
+            resolve();
+          });
+          pack.on('error', reject);
+        });
+
+        const stream = fs.createReadStream(tarFile);
+        await container.putArchive(stream, {
+          path: '/home/ubuntu',
+        });
+
+        fs.unlinkSync(tarFile);
+
+        // Fix permissions
+        await container
+          .exec({
+            Cmd: [
+              '/bin/bash',
+              '-c',
+              'sudo chown ubuntu:ubuntu /home/ubuntu/.claude.json && chmod 644 /home/ubuntu/.claude.json',
+            ],
+            AttachStdout: false,
+            AttachStderr: false,
+          })
+          .then((exec) => exec.start({}));
+
+        console.log(chalk.green('✓ .claude.json copied successfully'));
+      }
+    } catch (error) {
+      console.error(
+        chalk.yellow('⚠ Failed to copy .claude.json:'),
         error,
       );
       // Don't throw - this is not critical for container operation
