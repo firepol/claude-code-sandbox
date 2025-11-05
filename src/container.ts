@@ -44,9 +44,15 @@ export class ContainerManager {
       console.log(chalk.blue("• Using mounted folder mode (skipping file copy)"));
     }
 
-    // Copy Claude configuration if it exists
+    // Copy Claude configuration if it exists (unless mounting .claude)
     try {
-      await this._copyClaudeConfig(container);
+      if (!this.config.useMountClaude) {
+        await this._copyClaudeConfig(container);
+      } else {
+        console.log(
+          chalk.blue("• Skipping Claude config copy (using mounted .claude)"),
+        );
+      }
 
       // Copy git configuration if it exists
       await this._copyGitConfig(container);
@@ -359,6 +365,19 @@ export class ContainerManager {
     if (fs.existsSync(sshPath)) {
       volumes.push(`${sshPath}:/tmp/.ssh:ro`);
       console.log(chalk.blue("✓ Mounting SSH config (read-only)"));
+    }
+
+    // Mount .claude directory if requested
+    if (this.config.useMountClaude) {
+      const claudePath = path.join(os.homedir(), ".claude");
+      if (fs.existsSync(claudePath)) {
+        volumes.push(`${claudePath}:/home/ubuntu/.claude`);
+        console.log(chalk.blue("✓ Mounting .claude directory"));
+      } else {
+        console.log(
+          chalk.yellow("⚠ .claude directory not found, skipping mount"),
+        );
+      }
     }
 
     // Add custom volumes (legacy format)

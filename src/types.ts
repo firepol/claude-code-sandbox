@@ -29,6 +29,7 @@ export interface SandboxConfig {
   useMountedFolder?: boolean;
   mountedFolderPath?: string;
   useWebUI?: boolean;
+  useMountClaude?: boolean;
 }
 
 export interface Credentials {
