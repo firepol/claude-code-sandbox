@@ -29,6 +29,7 @@ export interface SandboxConfig {
   useMountedFolder?: boolean;
   mountedFolderPath?: string;
   useWebUI?: boolean;
+  useMountClaude?: boolean;
 }
 
 export interface Credentials {
@@ -41,6 +42,9 @@ export interface Credentials {
   github?: {
     token?: string;
     gitConfig?: string;
+  };
+  ccstatusline?: {
+    settingsPath: string;
   };
 }
 

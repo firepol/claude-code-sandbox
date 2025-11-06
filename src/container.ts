@@ -44,12 +44,23 @@ export class ContainerManager {
       console.log(chalk.blue("• Using mounted folder mode (skipping file copy)"));
     }
 
-    // Copy Claude configuration if it exists
+    // Copy Claude configuration if it exists (unless mounting .claude)
     try {
-      await this._copyClaudeConfig(container);
+      if (!this.config.useMountClaude) {
+        await this._copyClaudeConfig(container);
+      } else {
+        console.log(
+          chalk.blue("• Skipping .claude directory copy (using mount)"),
+        );
+        // Still need to copy .claude.json (it's in home directory, not .claude/)
+        await this._copyClaudeJson(container);
+      }
 
       // Copy git configuration if it exists
       await this._copyGitConfig(container);
+
+      // Copy ccstatusline settings if it exists
+      await this._copyCCStatuslineSettings(container, containerConfig.credentials);
     } catch (error) {
       console.error(chalk.red("✗ Configuration copy failed:"), error);
       // Clean up container on failure
@@ -356,6 +367,19 @@ export class ContainerManager {
     if (fs.existsSync(sshPath)) {
       volumes.push(`${sshPath}:/tmp/.ssh:ro`);
       console.log(chalk.blue("✓ Mounting SSH config (read-only)"));
+    }
+
+    // Mount .claude directory if requested
+    if (this.config.useMountClaude) {
+      const claudePath = path.join(os.homedir(), ".claude");
+      if (fs.existsSync(claudePath)) {
+        volumes.push(`${claudePath}:/home/ubuntu/.claude`);
+        console.log(chalk.blue("✓ Mounting .claude directory"));
+      } else {
+        console.log(
+          chalk.yellow("⚠ .claude directory not found, skipping mount"),
+        );
+      }
     }
 
     // Add custom volumes (legacy format)
@@ -768,6 +792,73 @@ export class ContainerManager {
     }
   }
 
+  private async _copyClaudeJson(container: Docker.Container): Promise<void> {
+    const fs = require('fs');
+    const os = require('os');
+    const path = require('path');
+
+    try {
+      // Copy .claude.json if it exists
+      const claudeJsonPath = path.join(os.homedir(), '.claude.json');
+      if (fs.existsSync(claudeJsonPath)) {
+        console.log(chalk.blue('• Copying .claude.json...'));
+
+        const configContent = fs.readFileSync(claudeJsonPath, 'utf-8');
+        const tarFile = `/tmp/claude-json-${Date.now()}.tar`;
+        const tarStream = require('tar-stream');
+        const pack = tarStream.pack();
+
+        pack.entry(
+          { name: '.claude.json', mode: 0o644 },
+          configContent,
+          (err: any) => {
+            if (err) throw err;
+            pack.finalize();
+          },
+        );
+
+        const chunks: Buffer[] = [];
+        pack.on('data', (chunk: any) => chunks.push(chunk));
+
+        await new Promise<void>((resolve, reject) => {
+          pack.on('end', () => {
+            fs.writeFileSync(tarFile, Buffer.concat(chunks));
+            resolve();
+          });
+          pack.on('error', reject);
+        });
+
+        const stream = fs.createReadStream(tarFile);
+        await container.putArchive(stream, {
+          path: '/home/ubuntu',
+        });
+
+        fs.unlinkSync(tarFile);
+
+        // Fix permissions
+        await container
+          .exec({
+            Cmd: [
+              '/bin/bash',
+              '-c',
+              'sudo chown ubuntu:ubuntu /home/ubuntu/.claude.json && chmod 644 /home/ubuntu/.claude.json',
+            ],
+            AttachStdout: false,
+            AttachStderr: false,
+          })
+          .then((exec) => exec.start({}));
+
+        console.log(chalk.green('✓ .claude.json copied successfully'));
+      }
+    } catch (error) {
+      console.error(
+        chalk.yellow('⚠ Failed to copy .claude.json:'),
+        error,
+      );
+      // Don't throw - this is not critical for container operation
+    }
+  }
+
   private async _copyGitConfig(container: Docker.Container): Promise<void> {
     const fs = require("fs");
     const os = require("os");
@@ -839,6 +930,93 @@ export class ContainerManager {
     } catch (error) {
       console.error(
         chalk.yellow("⚠ Failed to copy git configuration:"),
+        error,
+      );
+      // Don't throw - this is not critical for container operation
+    }
+  }
+
+  private async _copyCCStatuslineSettings(
+    container: Docker.Container,
+    credentials: Credentials,
+  ): Promise<void> {
+    const fsModule = require("fs");
+    const fsSync = fsModule;
+
+    // Check if credentials contain ccstatusline settings
+    if (!credentials.ccstatusline?.settingsPath) {
+      return; // No ccstatusline settings to copy
+    }
+
+    const ccstatuslineSettingsPath = credentials.ccstatusline.settingsPath;
+
+    try {
+      // Check if the settings file exists
+      if (!fsSync.existsSync(ccstatuslineSettingsPath)) {
+        return; // Settings file doesn't exist
+      }
+
+      console.log(chalk.blue("• Copying ccstatusline settings..."));
+
+      // Read the settings file
+      const settingsContent = fsSync.readFileSync(
+        ccstatuslineSettingsPath,
+        "utf-8",
+      );
+
+      // Create a temporary tar file with the settings
+      const tarFile = `/tmp/ccstatusline-settings-${Date.now()}.tar`;
+      const tarStream = require("tar-stream");
+      const pack = tarStream.pack();
+
+      // Add the settings.json file to the tar, creating the directory structure
+      pack.entry(
+        { name: ".config/ccstatusline/settings.json", mode: 0o644 },
+        settingsContent,
+        (err: any) => {
+          if (err) throw err;
+          pack.finalize();
+        },
+      );
+
+      // Write the tar to a file
+      const chunks: Buffer[] = [];
+      pack.on("data", (chunk: any) => chunks.push(chunk));
+
+      await new Promise<void>((resolve, reject) => {
+        pack.on("end", () => {
+          fsSync.writeFileSync(tarFile, Buffer.concat(chunks));
+          resolve();
+        });
+        pack.on("error", reject);
+      });
+
+      // Copy the tar file to the container's ubuntu user home directory
+      const stream = fsSync.createReadStream(tarFile);
+      await container.putArchive(stream, {
+        path: "/home/ubuntu",
+      });
+
+      // Clean up
+      fsSync.unlinkSync(tarFile);
+
+      // Fix permissions on the copied files
+      const fixPermsExec = await container.exec({
+        Cmd: [
+          "/bin/bash",
+          "-c",
+          "sudo chown -R ubuntu:ubuntu /home/ubuntu/.config && sudo chmod -R 755 /home/ubuntu/.config",
+        ],
+        AttachStdout: false,
+        AttachStderr: false,
+      });
+
+      await fixPermsExec.start({});
+
+      console.log(chalk.green("✓ ccstatusline settings copied successfully"));
+    } catch (error) {
+      console.error(
+        chalk.yellow("⚠ Failed to copy ccstatusline settings:"),
         error,
       );
       // Don't throw - this is not critical for container operation

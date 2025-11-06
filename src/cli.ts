@@ -84,6 +84,7 @@ program
   )
   .option("--mount-folder", "Enable mounted folder mode")
   .option("--mount-path <path>", "Specify custom mount path")
+  .option("--mount-claude", "Mount ~/.claude folder instead of copying")
   .action(async (options) => {
     console.log(chalk.blue("🚀 Starting Claude Sandbox..."));
 
@@ -97,6 +98,9 @@ program
     }
     if (options.mountPath) {
       config.mountedFolderPath = options.mountPath;
+    }
+    if (options.mountClaude) {
+      config.useMountClaude = true;
     }
 
     const sandbox = new ClaudeSandbox(config);
@@ -135,6 +139,7 @@ program
   )
   .option("--mount-folder", "Enable mounted folder mode")
   .option("--mount-path <path>", "Specify custom mount path")
+  .option("--mount-claude", "Mount ~/.claude folder instead of copying")
   .option(
     "--no-web",
     "Disable web UI",
@@ -146,6 +151,7 @@ program
     // Check process.argv as fallback for boolean flags on subcommands
     const mountFolderFromArgv = process.argv.includes('--mount-folder');
     const includeUntrackedFromArgv = process.argv.includes('--include-untracked');
+    const mountClaudeFromArgv = process.argv.includes('--mount-claude');
 
     const config = await loadConfig(options.config);
     config.containerPrefix = options.name || config.containerPrefix;
@@ -166,6 +172,9 @@ program
     }
     if (options.mountPath) {
       config.mountedFolderPath = options.mountPath;
+    }
+    if (options.mountClaude === true || mountClaudeFromArgv) {
+      config.useMountClaude = true;
     }
     config.useWebUI = options.web !== false;
 
