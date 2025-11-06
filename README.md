@@ -329,24 +329,51 @@ The tool will automatically detect and use Podman if:
 
 ### Web UI Terminal
 
-Launch a browser-based terminal interface to interact with Claude Code:
+By default, Claude Sandbox launches a browser-based terminal interface to interact with Claude Code. This provides:
 
 ```bash
-claude-sandbox --web
+# Start with web UI (default behavior)
+claude-sandbox start
+# or explicitly:
+claude-sandbox start --web
 ```
 
-This will:
+The web UI:
 
-- Start the container in detached mode
-- Launch a web server on `http://localhost:3456`
-- Open your browser automatically
-- Provide a full terminal interface with:
+- Starts the container in detached mode
+- Launches a web server on `http://localhost:3456`
+- Opens your browser automatically
+- Provides a full terminal interface with:
   - Real-time terminal streaming
   - Copy/paste support
   - Terminal resizing
   - Reconnection capabilities
 
 Perfect for when you want to monitor Claude's work while doing other tasks.
+
+#### Terminal-Only Mode (--no-web)
+
+For a traditional terminal-based experience without the web UI, use the `--no-web` flag:
+
+```bash
+claude-sandbox start --no-web
+```
+
+This mode:
+
+- Attaches directly to the container's terminal
+- Runs in the foreground (blocking your terminal)
+- Works well for simple tasks and debugging
+- Use `Ctrl+C` to detach from the container (it keeps running)
+- Use `claude-sandbox attach` to reconnect to the same container later
+
+**When to use `--no-web`:**
+
+- Prefer terminal-based interfaces
+- Running on servers without browser access
+- Want to keep the container running after detaching
+- Debugging container behavior directly
+- SSH sessions or remote development environments
 
 ### Automatic Credential Discovery
 
