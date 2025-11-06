@@ -90,6 +90,7 @@ Options:
   --no-pr                Disable automatic PR creation
   --mount-folder         Enable mounted folder mode
   --mount-path <path>    Specify custom mount path
+  --mount-claude         Mount ~/.claude folder instead of copying
 ```
 
 #### `claude-sandbox attach [container-id]`
@@ -223,6 +224,7 @@ Create a `claude-sandbox.config.json` file (see `claude-sandbox.config.example.j
 - `dockerSocketPath`: Custom Docker/Podman socket path (auto-detected by default)
 - `useMountedFolder`: Enable mounted folder mode (default: false)
 - `mountedFolderPath`: Path to mount into the container (default: current working directory)
+- `useMountClaude`: Mount ~/.claude directory instead of copying (default: false)
 
 #### Mount Configuration
 
@@ -272,6 +274,37 @@ Via configuration file:
 ```
 
 **Note**: In mounted folder mode, if the directory isn't a git repository, git operations will be skipped and git monitoring will be disabled. This allows Claude Code to work with any directory, not just git repositories.
+
+### Claude Configuration Mount
+
+Claude Code Sandbox supports mounting your local Claude configuration directory directly into the container instead of copying it. This is useful for:
+
+- **Live config updates**: Changes to Claude configuration on the host are immediately available in the container
+- **Reduced startup time**: Skips the copy overhead for the `.claude` directory
+- **Persistent state**: Session state and configuration changes persist across container restarts
+- **Shared credentials**: Share the same Claude credentials across multiple containers
+
+#### Using Claude Configuration Mount
+
+Via CLI:
+
+```bash
+claude-sandbox start --mount-claude
+```
+
+**How it works:**
+
+- The `~/.claude` directory from your host is mounted as read-write into the container at `/home/ubuntu/.claude`
+- The `~/.claude.json` configuration file is still copied into the container (not mounted) for compatibility
+- All other configuration and credential discovery mechanisms remain intact
+- If the `~/.claude` directory doesn't exist on the host, the mount is skipped with a warning
+
+**When to use:**
+
+- Working on Claude Code extensions or plugins that require frequent iteration
+- Debugging Claude configuration issues
+- Running multiple containers that share the same configuration
+- Developing custom MCP servers or tools
 
 ### Podman Support
 
