@@ -67,6 +67,12 @@ RUN echo '' >> /etc/bash.bashrc && \
     echo '# Add user local bin to PATH' >> /etc/bash.bashrc && \
     echo 'export PATH="/home/ubuntu/.local/bin:$PATH"' >> /etc/bash.bashrc
 
+# Fix xterm colors
+RUN echo '' >> /home/ubuntu/.bashrc && \
+    echo '# Fix xterm colors' >> /home/ubuntu/.bashrc && \
+    echo 'export TERM=xterm-256color' >> /home/ubuntu/.bashrc && \
+    echo 'export COLORTERM=truecolor' >> /home/ubuntu/.bashrc
+
 # Set up SSH config for ubuntu user
 RUN mkdir -p /home/ubuntu/.ssh && \
     echo "Host github.com\n\

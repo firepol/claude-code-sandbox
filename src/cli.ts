@@ -238,7 +238,7 @@ program
           "-it",
           targetContainerId,
           "bash",
-          "-c",
+          "-ic",
           "claude --dangerously-skip-permissions; exec bash"
         ], {
           stdio: "inherit"
